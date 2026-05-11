@@ -15,6 +15,7 @@ Countries Explorer es una aplicación web full-stack construida con el stack MER
 - **Country_Store**: Estado global del Frontend que mantiene la lista de países activos (no eliminados).
 - **Railway**: Plataforma de despliegue en la nube donde se alojan tanto el Frontend como el Backend.
 - **GitHub_Repository**: Repositorio remoto de control de versiones donde se almacena el código fuente.
+- **JWT**: JSON Web Token, token firmado que el Backend emite al autenticar un usuario y que el Frontend usa para autorizar solicitudes protegidas.
 
 ---
 
@@ -107,7 +108,25 @@ Countries Explorer es una aplicación web full-stack construida con el stack MER
 
 ---
 
-### Requirement 7: Estructura del proyecto y control de versiones con GitHub
+### Requirement 7: Autenticación de usuarios (Login)
+
+**User Story:** Como usuario, quiero iniciar sesión con mis credenciales, para acceder de forma segura a la aplicación y que mis acciones queden asociadas a mi cuenta.
+
+#### Acceptance Criteria
+
+1. THE Frontend SHALL incluir una pantalla de Login con campos para `email` y `contraseña`, y un botón "Iniciar sesión".
+2. WHEN el usuario envía el formulario de Login con credenciales válidas, THE Backend SHALL validar las credenciales contra la base de datos MongoDB y retornar un token JWT con tiempo de expiración de 24 horas.
+3. WHEN el Backend retorna un token JWT válido, THE Frontend SHALL almacenar el token en `localStorage` y redirigir al usuario a la vista principal de países.
+4. IF el usuario intenta acceder a cualquier ruta protegida sin un token JWT válido, THEN THE Frontend SHALL redirigir automáticamente al usuario a la pantalla de Login.
+5. IF las credenciales enviadas son incorrectas, THEN THE Backend SHALL retornar un error HTTP 401 con el mensaje `"Credenciales inválidas"` y THE Frontend SHALL mostrar ese mensaje al usuario.
+6. IF el formulario de Login se envía con campos vacíos, THEN THE Frontend SHALL mostrar mensajes de validación indicando los campos requeridos sin enviar la solicitud al Backend.
+7. THE Frontend SHALL incluir un botón "Cerrar sesión" en la vista principal que, WHEN el usuario lo activa, THE Frontend SHALL eliminar el token JWT del `localStorage` y redirigir al usuario a la pantalla de Login.
+8. THE Backend SHALL exponer el endpoint `/api/auth/login` bajo el método HTTP POST para recibir las credenciales del usuario.
+
+---
+
+### Requirement 8: Estructura del proyecto y control de versiones con GitHub
+
 
 **User Story:** Como desarrollador, quiero que el proyecto esté organizado en un repositorio GitHub con una estrategia de ramas definida, para mantener un flujo de trabajo ordenado y seguro en producción.
 
@@ -122,7 +141,7 @@ Countries Explorer es una aplicación web full-stack construida con el stack MER
 
 ---
 
-### Requirement 8: Despliegue en Railway
+### Requirement 9: Despliegue en Railway
 
 **User Story:** Como desarrollador, quiero desplegar tanto el Frontend como el Backend en Railway en modo producción, para que la aplicación sea accesible públicamente.
 
