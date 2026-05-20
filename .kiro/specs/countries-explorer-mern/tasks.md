@@ -1,0 +1,289 @@
+# Implementation Plan: Countries Explorer MERN
+
+## Overview
+
+Implementación incremental de la aplicación full-stack Countries Explorer sobre el stack MERN. El plan sigue el orden natural de dependencias: estructura del proyecto → backend (auth + proxy + PDF) → frontend (store + páginas + componentes) → integración y despliegue. Cada tarea construye sobre la anterior y termina con código integrado y funcional.
+
+## Tasks
+
+- [x] 1. Scaffolding del monorepo y configuración base
+  - Crear la estructura de directorios raíz con `frontend/` y `backend/` en la raíz del repositorio
+  - Crear `backend/package.json` con dependencias: `express`, `mongoose`, `jsonwebtoken`, `bcryptjs`, `pdfkit`, `dotenv`, `cors`; devDependencies: `jest`, `fast-check`, `supertest`, `mongodb-memory-server`
+  - Crear `frontend/package.json` con Vite + React; dependencias: `react-router-dom`, `zustand`, `fast-check`; devDependencies: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`
+  - Crear `frontend/vite.config.js` con configuración de Vitest (environment: jsdom, globals: true, setupFiles)
+  - Crear `frontend/src/setupTests.js` importando `@testing-library/jest-dom`
+  - Crear `.gitignore` en la raíz excluyendo `node_modules/`, `.env`, `dist/`, `build/`
+  - Crear `backend/.env.example` con las variables `PORT`, `MONGO_URI`, `JWT_SECRET`, `RESTCOUNTRIES_URL`
+  - Crear `frontend/.env.example` con la variable `VITE_API_URL`
+  - _Requirements: 8.1, 8.6_
+
+- [x] 2. Backend — Entry point, conexión a MongoDB y health check
+  - [x] 2.1 Crear `backend/src/config/db.js` con la función `connectDB()` que usa `mongoose.connect(process.env.MONGO_URI)` y lanza error si falla
+    - _Requirements: 7.2_
+  - [x] 2.2 Crear `backend/src/index.js` como entry point de Express: inicializar app, registrar middleware `cors` y `express.json()`, montar routers, llamar `connectDB()`, escuchar en `process.env.PORT`
+    - Incluir el endpoint `GET /health` que retorna `{ status: "ok" }` con HTTP 200
+    - _Requirements: 9.1, 9.5_
+  - [ ]* 2.3 Escribir smoke test para el health check
+    - Verificar que `GET /health` retorna HTTP 200 con `{ status: "ok" }`
+    - _Requirements: 9.5_
+
+- [x] 3. Backend — Modelo de usuario, seed script y autenticación JWT
+  - [x] 3.1 Crear `backend/src/models/User.js` con el Mongoose schema: campos `email` (String, required, unique, lowercase), `password` (String, required), `createdAt` (Date, default: Date.now)
+    - _Requirements: 7.2_
+  - [x] 3.2 Crear `backend/src/scripts/seedUser.js` con un script ejecutable que crea un usuario de prueba en MongoDB usando `bcrypt.hash()` para la contraseña
+    - El script debe leer `MONGO_URI` desde `.env`, conectarse a MongoDB, verificar si el usuario ya existe antes de insertar, y desconectarse al terminar
+    - Documentar el email y contraseña de prueba en `backend/.env.example` como comentario
+    - _Requirements: 7.2_
+  - [x] 3.3 Crear `backend/src/controllers/authController.js` con la función `login(req, res)`:
+    - Buscar usuario por email en MongoDB
+    - Comparar password con `bcrypt.compare()`
+    - Si credenciales inválidas → HTTP 401 `{ message: "Credenciales inválidas" }`
+    - Si válidas → firmar JWT con `userId` y `email`, expiración 24h, retornar `{ token }`
+    - _Requirements: 7.2, 7.5, 7.8_
+  - [x] 3.4 Crear `backend/src/routes/authRoutes.js` registrando `POST /api/auth/login` → `authController.login`
+    - _Requirements: 7.8_
+  - [x] 3.5 Crear `backend/src/middleware/authMiddleware.js` con la función `verifyToken(req, res, next)`:
+    - Leer el header `Authorization: Bearer <token>`
+    - Si ausente → HTTP 401 `{ message: "Token no proporcionado" }`
+    - Si inválido/expirado → HTTP 401 `{ message: "Token inválido" }`
+    - Si válido → adjuntar payload a `req.user` y llamar `next()`
+    - _Requirements: 7.4_
+  - [ ]* 3.6 Escribir pruebas unitarias para `authController` y `authMiddleware`
+    - `login` retorna 401 con credenciales incorrectas
+    - `login` retorna JWT con credenciales correctas
+    - `verifyToken` rechaza token expirado
+    - `verifyToken` rechaza token ausente
+    - _Requirements: 7.2, 7.4, 7.5_
+  - [ ]* 3.7 Escribir property test para autenticación (Property 5)
+    - **Property 5: Credenciales correctas producen JWT válido**
+    - Usar `fc.emailAddress()` y `fc.string({ minLength: 8 })` para generar pares (email, password)
+    - Verificar: `jwt.verify(token, JWT_SECRET)` no lanza excepción, `payload.email === email`, `payload.exp - payload.iat ≈ 86400`
+    - **Validates: Requirements 7.2**
+  - [ ]* 3.8 Escribir property test para rutas protegidas (Property 6)
+    - **Property 6: Rutas protegidas rechazan tokens inválidos o ausentes**
+    - Usar `fc.oneof(fc.constant(null), fc.string(), expiredTokenArbitrary)` como token
+    - Verificar: solicitud sin token → 401; token aleatorio → 401/403; token expirado → 401/403
+    - **Validates: Requirements 7.4**
+
+- [x] 4. Checkpoint — Verificar backend de autenticación
+  - Asegurarse de que todos los tests del backend de auth pasan. Consultar al usuario si surgen dudas.
+
+- [x] 5. Backend — Proxy de RestCountries
+  - [x] 5.1 Crear `backend/src/services/restCountriesService.js` con la función `fetchCountries()`:
+    - Usar `AbortController` con timeout de 10 segundos
+    - Si `AbortError` → lanzar error de tipo timeout
+    - Si respuesta HTTP 4xx/5xx → lanzar error de tipo API error
+    - Retornar el array de países parseado
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 5.2 Crear `backend/src/controllers/countriesController.js` con la función `getCountries(req, res)`:
+    - Llamar a `restCountriesService.fetchCountries()`
+    - Si timeout → HTTP 504 `{ message: "External API timeout" }`
+    - Si error de API → HTTP 502 `{ message: "External API error" }`
+    - Si éxito → HTTP 200 con el array de países
+    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [x] 5.3 Crear `backend/src/routes/countriesRoutes.js` registrando `GET /api/countries` con `verifyToken` → `getCountries`
+    - _Requirements: 1.4_
+  - [x] 5.4 Montar `authRoutes` y `countriesRoutes` en `backend/src/index.js`
+    - _Requirements: 1.4, 7.8_
+  - [ ]* 5.5 Escribir pruebas unitarias para `countriesController`
+    - `getCountries` retorna 504 cuando `restCountriesService` lanza timeout
+    - `getCountries` retorna 502 cuando `restCountriesService` lanza error de API
+    - `getCountries` retorna 200 con array cuando el servicio responde correctamente
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [ ]* 5.6 Escribir property test para el proxy de RestCountries (Property 7)
+    - **Property 7: Proxy de RestCountries preserva los campos requeridos**
+    - Mockear `restCountriesService` con `fc.array(countryArbitrary, { minLength: 1 })`
+    - Verificar: cada elemento del array retornado contiene `name`, `capital`, `population`, `region`, `flags` con valores idénticos a los mockeados
+    - **Validates: Requirements 1.1**
+
+- [x] 6. Backend — Generación de PDFs
+  - [x] 6.1 Crear `backend/src/services/pdfService.js` con dos funciones usando `pdfkit`:
+    - `generateSinglePdf(country)`: genera PDF con bandera (imagen desde URL), nombre, capital, población y región; retorna un Buffer o stream
+    - `generateAllPdf(countries)`: genera PDF con una entrada por país; retorna un Buffer o stream
+    - _Requirements: 5.3, 6.3_
+  - [x] 6.2 Agregar funciones `pdfSingle(req, res)` y `pdfAll(req, res)` en `countriesController.js`:
+    - `pdfSingle`: validar que el body contenga `name`, `capital`, `population`, `region`, `flags`; si falta alguno → HTTP 400 `{ message: "Datos de país inválidos o incompletos" }`; si válido → llamar `pdfService.generateSinglePdf()`, responder con `Content-Type: application/pdf` y `Content-Disposition: attachment; filename="{name.common}.pdf"`
+    - `pdfAll`: validar que el body sea un array no vacío; si vacío → HTTP 400 `{ message: "La lista de países está vacía" }`; si válido → llamar `pdfService.generateAllPdf()`, responder con `Content-Type: application/pdf` y `Content-Disposition: attachment; filename="countries-report.pdf"`
+    - _Requirements: 5.3, 5.4, 5.6, 6.3, 6.4, 6.6_
+  - [x] 6.3 Registrar en `countriesRoutes.js` los endpoints `POST /api/countries/pdf/single` y `POST /api/countries/pdf/all` con `verifyToken`
+    - _Requirements: 5.2, 6.2_
+  - [ ]* 6.4 Escribir pruebas unitarias para los controladores PDF
+    - `pdfSingle` retorna 400 con datos incompletos
+    - `pdfAll` retorna 400 con lista vacía
+    - `pdfSingle` retorna 200 con `Content-Type: application/pdf` cuando los datos son válidos
+    - `pdfAll` retorna 200 con `Content-Type: application/pdf` cuando la lista no está vacía
+    - _Requirements: 5.3, 5.4, 5.6, 6.3, 6.4, 6.6_
+  - [ ]* 6.5 Escribir property test para validación de PDF individual (Property 3)
+    - **Property 3: Validación de datos de país para PDF individual**
+    - Usar `fc.record` con campos opcionales omitidos aleatoriamente para generar objetos incompletos
+    - Usar `fc.record` con todos los campos presentes y válidos para generar objetos completos
+    - Verificar: objeto con campo faltante → HTTP 400; objeto completo → HTTP 200 + `Content-Type: application/pdf`
+    - **Validates: Requirements 5.3, 5.4, 5.6**
+  - [ ]* 6.6 Escribir property test para PDF general (Property 4)
+    - **Property 4: PDF general rechaza lista vacía y acepta lista no vacía**
+    - Usar `fc.constant([])` y `fc.array(countryArbitrary, { minLength: 1 })`
+    - Verificar: lista vacía → HTTP 400; lista no vacía → HTTP 200 + `Content-Type: application/pdf`
+    - **Validates: Requirements 6.3, 6.4, 6.6**
+
+- [x] 7. Checkpoint — Verificar backend completo
+  - Asegurarse de que todos los tests del backend pasan (auth, proxy, PDF). Consultar al usuario si surgen dudas.
+
+- [x] 8. Frontend — Setup de Vite + React Router + estructura base
+  - Crear `frontend/src/main.jsx` con `ReactDOM.createRoot` y `<BrowserRouter>` envolviendo `<App />`
+  - Crear `frontend/src/App.jsx` con las rutas usando React Router v6: `/login` → `<LoginPage>`, `/` → `<ProtectedRoute><HomePage /></ProtectedRoute>`
+  - Crear `frontend/index.html` con el div raíz y el script de entrada
+  - Crear los archivos vacíos de páginas y componentes para que las importaciones resuelvan: `LoginPage.jsx`, `HomePage.jsx`, `CountryCard.jsx`, `SearchBar.jsx`, `LoadingSpinner.jsx`, `ProtectedRoute.jsx`
+  - _Requirements: 7.1, 7.3, 7.4, 8.1_
+
+- [x] 9. Frontend — API client y Zustand store
+  - [x] 9.1 Crear `frontend/src/api/countriesApi.js` con las cuatro funciones que leen `import.meta.env.VITE_API_URL`:
+    - `login(email, password)` → `POST /api/auth/login` → `{ token }`
+    - `getCountries(token)` → `GET /api/countries` con header `Authorization: Bearer <token>`
+    - `downloadSinglePdf(country, token)` → `POST /api/countries/pdf/single` con header `Authorization: Bearer <token>` → `Blob`
+    - `downloadAllPdf(countries, token)` → `POST /api/countries/pdf/all` con header `Authorization: Bearer <token>` → `Blob`
+    - _Requirements: 1.1, 5.2, 6.2, 7.2, 7.3_
+  - [x] 9.2 Crear `frontend/src/store/useCountryStore.js` con Zustand:
+    - State: `allCountries`, `countries`, `searchTerm`, `isLoading`, `error`
+    - Selector derivado: `filteredCountries` filtrando `countries` por `searchTerm` (case-insensitive)
+    - Actions: `fetchCountries(token)`, `deleteCountry(nameCommon)`, `restoreCountries()`, `setSearchTerm(text)`
+    - `fetchCountries` debe setear `isLoading: true` al inicio y `isLoading: false` al terminar; en error setear `error`
+    - _Requirements: 3.2, 3.3, 4.2, 4.3, 4.4_
+  - [ ]* 9.3 Escribir pruebas unitarias para `useCountryStore`
+    - `deleteCountry` elimina el país correcto y no modifica `allCountries`
+    - `restoreCountries` repone `countries` igual a `allCountries`
+    - `filteredCountries` retorna subconjunto correcto con búsqueda case-insensitive
+    - `filteredCountries` retorna todos los países cuando `searchTerm` es cadena vacía
+    - _Requirements: 3.2, 3.3, 4.2, 4.3, 4.4_
+  - [ ]* 9.4 Escribir property test para filtrado de búsqueda (Property 1)
+    - **Property 1: Filtrado de búsqueda es case-insensitive y no destruye datos**
+    - Usar `fc.array(countryArbitrary, { minLength: 1 })` y `fc.string()` como término de búsqueda
+    - Verificar: `filteredCountries ⊆ allCountries`; `setSearchTerm("")` → `filteredCountries === countries`; filtrado es case-insensitive
+    - **Validates: Requirements 3.2, 3.3**
+  - [ ]* 9.5 Escribir property test para eliminación y restauración (Property 2)
+    - **Property 2: Eliminación reduce la lista y restauración la repone**
+    - Usar `fc.array(countryArbitrary, { minLength: 2 })` y `fc.subarray` para el subconjunto a eliminar
+    - Verificar: después de eliminar, ningún país eliminado aparece en `countries`; después de `restoreCountries()`, `countries` deepEqual `allCountries`
+    - **Validates: Requirements 4.2, 4.3, 4.4**
+
+- [x] 10. Frontend — Componentes base
+  - [x] 10.1 Implementar `frontend/src/components/LoadingSpinner.jsx`:
+    - Renderizar un indicador visual de carga (spinner CSS o skeleton)
+    - _Requirements: 2.7_
+  - [x] 10.2 Implementar `frontend/src/components/ProtectedRoute.jsx`:
+    - Leer token de `localStorage`
+    - Si no existe → `<Navigate to="/login" replace />`
+    - Si existe → renderizar `children`
+    - _Requirements: 7.4_
+  - [x] 10.3 Implementar `frontend/src/components/SearchBar.jsx`:
+    - Renderizar `<input type="text">` con placeholder `"Buscar país..."`
+    - Llamar a `props.onChange` en cada keystroke
+    - _Requirements: 3.1, 3.2_
+  - [x] 10.4 Implementar `frontend/src/components/CountryCard.jsx`:
+    - Renderizar `<img>` con `flags.svg` (alt = `name.common`)
+    - Renderizar `name.common` en `<h2>`
+    - Renderizar población formateada con `population.toLocaleString()`
+    - Renderizar región
+    - Botón "Eliminar" que llama a `props.onDelete(name.common)`
+    - Botón "Descargar PDF" que llama a `props.onDownloadPdf(country)`
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 4.1, 5.1_
+  - [ ]* 10.5 Escribir pruebas unitarias para los componentes base
+    - `CountryCard` renderiza bandera, nombre, población formateada y región
+    - `CountryCard` llama a `onDelete` con el nombre correcto al hacer clic en "Eliminar"
+    - `SearchBar` llama a `onChange` en cada keystroke
+    - `ProtectedRoute` redirige a `/login` cuando no hay token en localStorage
+    - `ProtectedRoute` renderiza children cuando hay token en localStorage
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 4.1, 7.4_
+
+- [x] 11. Frontend — LoginPage
+  - [x] 11.1 Implementar `frontend/src/pages/LoginPage.jsx`:
+    - Formulario con campos `email` y `contraseña` y botón "Iniciar sesión"
+    - Validación inline: si algún campo está vacío al enviar, mostrar mensaje de campo requerido sin llamar al backend
+    - Al enviar con campos válidos: llamar a `countriesApi.login(email, password)`
+    - Si respuesta exitosa: guardar token en `localStorage` y redirigir a `/`
+    - Si error 401: mostrar `"Credenciales inválidas"` en el formulario
+    - _Requirements: 7.1, 7.3, 7.5, 7.6_
+  - [ ]* 11.2 Escribir pruebas unitarias para `LoginPage`
+    - Muestra mensajes de validación con campos vacíos sin llamar al backend
+    - Guarda token y redirige a `/` con credenciales correctas
+    - Muestra `"Credenciales inválidas"` cuando el backend retorna 401
+    - _Requirements: 7.1, 7.3, 7.5, 7.6_
+
+- [x] 12. Frontend — HomePage
+  - [x] 12.1 Implementar `frontend/src/pages/HomePage.jsx`:
+    - Leer `filteredCountries`, `isLoading`, `error`, `fetchCountries`, `deleteCountry`, `restoreCountries`, `setSearchTerm` desde `useCountryStore`
+    - Leer token de `localStorage` y pasarlo a las llamadas de API
+    - Al montar: llamar `fetchCountries(token)`
+    - Mientras `isLoading`: renderizar `<LoadingSpinner />`
+    - Si `error`: mostrar `"No se pudieron cargar los países. Intente nuevamente."`
+    - Si `filteredCountries` vacío y sin error y sin `searchTerm`: mostrar `"No hay países para mostrar. Restaura la lista para continuar."`
+    - Si `searchTerm` activo y `filteredCountries` vacío: mostrar `"No se encontraron países con ese nombre."`
+    - Renderizar `<SearchBar>` conectado a `setSearchTerm`
+    - Renderizar botón "Restaurar países" que llama a `restoreCountries()`
+    - Renderizar botón "Descargar PDF General" que llama a `handleDownloadAll()`
+    - Renderizar grid de `<CountryCard>` para cada país en `filteredCountries`
+    - Botón "Cerrar sesión": eliminar token de `localStorage` y redirigir a `/login`
+    - _Requirements: 2.1, 2.6, 2.7, 3.1, 3.3, 3.4, 3.5, 4.2, 4.4, 4.5, 6.1, 7.7_
+  - [x] 12.2 Implementar `handleDownloadSinglePdf(country)` en `HomePage`:
+    - Llamar a `countriesApi.downloadSinglePdf(country, token)`
+    - Crear un `<a>` temporal con `URL.createObjectURL(blob)` y `download="{name.common}.pdf"` y hacer clic programático
+    - Si error: mostrar alerta/toast con mensaje de error
+    - _Requirements: 5.2, 5.5_
+  - [x] 12.3 Implementar `handleDownloadAll()` en `HomePage`:
+    - Llamar a `countriesApi.downloadAllPdf(filteredCountries, token)`
+    - Crear un `<a>` temporal con `URL.createObjectURL(blob)` y `download="countries-report.pdf"` y hacer clic programático
+    - Si error: mostrar alerta/toast con mensaje de error
+    - _Requirements: 6.2, 6.5_
+  - [ ]* 12.4 Escribir pruebas unitarias para `HomePage`
+    - Muestra `<LoadingSpinner>` mientras `isLoading` es true
+    - Muestra mensaje de error cuando `error` no es null
+    - Muestra mensaje de lista vacía cuando `filteredCountries` está vacío y no hay `searchTerm`
+    - Muestra mensaje de búsqueda sin resultados cuando hay `searchTerm` pero `filteredCountries` vacío
+    - Renderiza un `<CountryCard>` por cada país en `filteredCountries`
+    - Botón "Cerrar sesión" elimina el token de localStorage y redirige a `/login`
+    - _Requirements: 2.1, 2.6, 2.7, 3.5, 4.5, 7.7_
+
+- [x] 13. Checkpoint — Verificar frontend completo
+  - Asegurarse de que todos los tests del frontend pasan. Consultar al usuario si surgen dudas.
+
+- [x] 14. Pruebas de integración del backend
+  - [x]* 14.1 Escribir test de integración para login end-to-end con `mongodb-memory-server`
+    - Crear usuario en DB en memoria, llamar `POST /api/auth/login`, verificar que retorna JWT válido
+    - _Requirements: 7.2, 7.8_
+  - [x]* 14.2 Escribir test de integración para `GET /api/countries` con RestCountries mockeada
+    - Usar `nock` o `msw` para mockear la respuesta de RestCountries
+    - Verificar que el endpoint retorna el array de países con los campos requeridos
+    - _Requirements: 1.1, 1.4_
+
+- [x] 15. Configuración de build de producción
+  - [x] 15.1 Verificar que `frontend/vite.config.js` genera el build en `frontend/dist/` con `npm run build`; agregar el script `"build": "vite build"` en `frontend/package.json` si no existe
+    - _Requirements: 9.2, 9.6_
+  - [x] 15.2 Agregar script `"start": "node src/index.js"` en `backend/package.json`
+    - _Requirements: 9.1_
+  - [x] 15.3 Crear `backend/railway.toml` con el comando de inicio `node src/index.js` y la variable de entorno `PORT`
+    - _Requirements: 9.1_
+  - [x] 15.4 Crear `frontend/railway.toml` con el comando de build `npm run build` y el directorio de salida `dist/`
+    - _Requirements: 9.2, 9.6_
+
+- [x] 16. Configuración de variables de entorno y documentación de despliegue
+  - Crear `backend/README.md` documentando las variables de entorno requeridas en Railway (`PORT`, `MONGO_URI`, `JWT_SECRET`, `RESTCOUNTRIES_URL`) y el comando para ejecutar el seed script (`node src/scripts/seedUser.js`)
+  - Crear `frontend/README.md` documentando la variable de entorno requerida en Railway (`VITE_API_URL`) y el comando de build (`npm run build`)
+  - _Requirements: 9.1, 9.2, 9.3, 9.4_
+
+- [x] 17. Configuración de ramas y plantilla de Pull Request en GitHub
+  - Crear `.github/PULL_REQUEST_TEMPLATE.md` en la raíz del repositorio con secciones: descripción del cambio, tipo de cambio (feature/fix/refactor), rama origen y destino, checklist de revisión
+  - Crear `.github/CODEOWNERS` (opcional) o documentar en el `README.md` raíz la estrategia de ramas: `main` (producción), `develop` (integración), `feature/*` (funcionalidades)
+  - _Requirements: 8.2, 8.3, 8.4, 8.5_
+
+- [x] 18. Checkpoint final — Verificar integración completa
+  - Asegurarse de que todos los tests (unitarios, de propiedades e integración) pasan en frontend y backend. Consultar al usuario si surgen dudas.
+
+## Notes
+
+- Las tareas marcadas con `*` son opcionales y pueden omitirse para un MVP más rápido
+- Cada tarea referencia los requisitos específicos para trazabilidad
+- Los checkpoints garantizan validación incremental antes de avanzar a la siguiente capa
+- Las property tests usan `fast-check` tanto en frontend (Vitest) como en backend (Jest)
+- Las property tests se ejecutan con mínimo 100 iteraciones y se etiquetan con el formato `Feature: countries-explorer-mern, Property {N}: {texto}`
+- El modelo MERN implica que MongoDB solo se usa para autenticación; los datos de países vienen de RestCountries en tiempo real
+- El token JWT se almacena en `localStorage` y se envía en el header `Authorization: Bearer` en cada solicitud protegida
+- El seed script (`backend/src/scripts/seedUser.js`) debe ejecutarse manualmente antes del primer uso para crear el usuario de prueba en MongoDB
