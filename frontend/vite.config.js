@@ -11,6 +11,9 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: parseInt(process.env.PORT) || 4173,
-    allowedHosts: ['all'],
+    allowedHosts: [
+      'hopeful-enthusiasm-production-aa4b.up.railway.app',
+      '.up.railway.app',
+    ],
   },
 });
