@@ -45,11 +45,10 @@ export default function LoginPage() {
       localStorage.setItem('token', token);
       navigate('/');
     } catch (err) {
-      // Treat any 401-like error as invalid credentials
       if (err.message.includes('401')) {
         setAuthError('Credenciales inválidas');
       } else {
-        setAuthError('Error al iniciar sesión. Intente nuevamente.');
+        setAuthError(`Error: ${err.message}`);
       }
     } finally {
       setIsSubmitting(false);
