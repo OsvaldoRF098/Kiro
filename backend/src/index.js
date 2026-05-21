@@ -8,8 +8,24 @@ const countriesRoutes = require('./routes/countriesRoutes');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// CORS — allow the Railway frontend and local dev
+const allowedOrigins = [
+  'https://hopeful-enthusiasm-production-aa4b.up.railway.app',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Health check endpoint
