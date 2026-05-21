@@ -25,10 +25,15 @@ app.use('/api/countries', countriesRoutes);
 if (require.main === module) {
   const PORT = process.env.PORT || 3001;
 
-  connectDB().then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+  // Start server immediately so health check works even if DB is slow
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+
+  // Connect to MongoDB (non-blocking — server stays up even if DB fails)
+  connectDB().catch((err) => {
+    console.error('MongoDB connection failed:', err.message);
+    console.warn('Server is running but DB-dependent routes will fail.');
   });
 }
 
