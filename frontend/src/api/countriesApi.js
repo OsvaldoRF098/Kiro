@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://kiro-production-c289.up.railway.app';
 
 /**
  * Authenticate a user and retrieve a JWT token.
