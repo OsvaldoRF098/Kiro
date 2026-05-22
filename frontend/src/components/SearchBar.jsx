@@ -1,27 +1,51 @@
-/**
- * SearchBar — text input for filtering countries by name.
- *
- * Props:
- *   value    {string}   - Controlled input value
- *   onChange {Function} - Called with the new text on every keystroke
- */
+const searchStyles = `
+  .search-wrapper {
+    position: relative;
+    flex: 1;
+    max-width: 420px;
+  }
+  .search-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1rem;
+    pointer-events: none;
+  }
+  .search-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.75rem;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 0.75rem;
+    font-size: 0.95rem;
+    color: #f1f5f9;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: 'Inter', sans-serif;
+  }
+  .search-input::placeholder { color: #475569; }
+  .search-input:focus {
+    border-color: #818cf8;
+    box-shadow: 0 0 0 3px rgba(129,140,248,0.15);
+  }
+`;
+
 export default function SearchBar({ value, onChange }) {
   return (
-    <input
-      type="text"
-      placeholder="Buscar país..."
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label="Buscar país"
-      style={{
-        padding: '0.5rem 1rem',
-        fontSize: '1rem',
-        border: '1px solid #d1d5db',
-        borderRadius: '0.375rem',
-        width: '100%',
-        maxWidth: '400px',
-        outline: 'none',
-      }}
-    />
+    <>
+      <style>{searchStyles}</style>
+      <div className="search-wrapper">
+        <span className="search-icon">🔍</span>
+        <input
+          type="text"
+          placeholder="Buscar país..."
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label="Buscar país"
+          className="search-input"
+        />
+      </div>
+    </>
   );
 }
